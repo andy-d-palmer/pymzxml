@@ -10,7 +10,7 @@ import base64
 import struct
 from xml.dom import minidom
 import numpy as np
-def encode_spectrum(mzs,counts,precision='64'): # modified from https://code.google.com/p/massspec-toolbox/source/browse/trunk/mzxml/MzXML.py
+def encode_spectrum(mzs,counts,precision='32'): # modified from https://code.google.com/p/massspec-toolbox/source/browse/trunk/mzxml/MzXML.py
         # interlace mzs/counts
         import base64
         if precision == '32':
@@ -23,6 +23,8 @@ def encode_spectrum(mzs,counts,precision='64'): # modified from https://code.goo
             pack_format1 = "!%dQ" % tmp_size
             pack_format2 = 'L'
             pack_format3 = 'd'
+        else:
+            raise ValueError('peak precision {} not supported'.format(precision))
         tmp_list = []
         str_to_encode=''
         for m,c in zip(mzs,counts):
@@ -38,7 +40,7 @@ def encode_spectrum(mzs,counts,precision='64'): # modified from https://code.goo
         b64encoded = base64.b64encode(str_to_encode)
         return b64encoded
         
-def write_scan(self,buffer,scanNumber,mzList,countList,rt,polarity,msLevel,collisionEnergy,precursorIntensity=[],precursorMz=[]): #get and decode spectrum
+def write_scan(buffer,scanNumber,mzList,countList,rt,polarity,msLevel,collisionEnergy,peakPrecision='32',precursorIntensity=[],precursorMz=[]): #get and encode spectrum
         # currently only suppports centroided data
         peaksCount = len(mzList)
         lowMz=mzList[0]
@@ -46,15 +48,15 @@ def write_scan(self,buffer,scanNumber,mzList,countList,rt,polarity,msLevel,colli
         basePeakMz=mzList[np.argmax(countList)]
         basePeakIntensity=np.max(countList)
         totIonCurrent=np.sum(countList)
-        peakPrecision = mzList.dtype #should be bit count 32/64
-        peak_base = ecode_spectrum(mzList,countlist,precision=peakPrecision)
-        if mslevel>1: assert precursor != []
-        scan_head  = "<scan num=\"{}\" centroided=\"1\" retentionTime=\"{}\" polarity=\"{}\" msLevel=\"{}\" collisionEnergy=\"{}\" peaksCount=\"{}\" lowMz=\"{}\" highMz=\"{}\" basePeakMz=\"{}\" basePeakIntensity=\"{}\" totIonCurrent=\"{}\"> ".format(scanNumber,rt,polarity,msLevel,collisionEnergy,peaksCount,lowMz,highMz,basePeakMz,basePeakIntensity,totIonCurrent)
-        peaks      = "<peaks precision=\"{}\" byteOrder=\"network\" pairOrder=\"m/z-int\">{}</peaks> " .format(peaksCount,peakPrecision,peak_base)
+        peak_base64 = encode_spectrum(mzList,countList,precision=peakPrecision)
+        if msLevel>1: assert precursor != []
+        scan_head  = "<scan num=\"{}\" centroided=\"1\" retentionTime=\"{}\" polarity=\"{}\" msLevel=\"{}\" collisionEnergy=\"{}\" peaksCount=\"{}\" lowMz=\"{}\" highMz=\"{}\" basePeakMz=\"{}\" basePeakIntensity=\"{}\" totIonCurrent=\"{}\"> "\
+                    .format(scanNumber,                               rt,             polarity,    msLevel,            collisionEnergy,      peaksCount,   lowMz,     highMz,            basePeakMz,basePeakIntensity,totIonCurrent)
+        peaks      = "<peaks precision=\"{}\" byteOrder=\"network\" pairOrder=\"m/z-int\">{}</peaks> " .format(peakPrecision,peak_base64)
         scan_tail  = "</scan>"
-        if mslevel==1:
+        if msLevel==1:
             scan_text  = "\n".join((scan_head,peaks,scan_tail))
-        if mslevel==2:
+        if msLevel==2:
             prec = "<precursorMz precursorIntensity=\"{}\">{}</precursorMz>".format(precursorIntensity,precursorMz)
             scan_text  = "\n".join((scan_head,prec,peaks,scan_tail))
         buffer.write(scan_text)
@@ -66,7 +68,7 @@ class writeMzXML():
         self.filename = filename
         self.scan_list = []
 
-    def add_scan(self,mzs,counts,polarity,scan_num,mslevel,collisionEnergy,rt=0,precursorIntensity=[],precursorMz=[]):
+    def add_scan(self,mzs,counts,polarity,scan_num,mslevel,collisionEnergy,rt=0,precision='32',precursorIntensity=[],precursorMz=[]):
         scan = {"scan_num":scan_num,
                 "mzs":mzs,
                 "counts":counts,
@@ -75,13 +77,14 @@ class writeMzXML():
                 "mslevel":mslevel,
                 "collisionEnergy":collisionEnergy,
                 "precursorIntensity":precursorIntensity,
-                "precursorMz":precursorMz
+                "precursorMz":precursorMz,
+                "precision":precision
                 }
         self.scan_list.append(scan)
 
     def write_mzxml(self):
         with open(self.filename) as f:
             for scan in self.scan_list:
-                write_scan(f,scan['scan_num'],scan["mzs"],scan["counts"],scan["rt"],scan["polarity"],scan["mslevel"],scan["collisionEnergy"],scan["precursorIntensity"],scan[precursorMz])
+                write_scan(f,scan['scan_num'],scan["mzs"],scan["counts"],scan["rt"],scan["polarity"],scan["mslevel"],scan["collisionEnergy"],scan["precursorIntensity"],scan["precursorMz"],peakPrecision=scan["peakPrecision"])
 
 
