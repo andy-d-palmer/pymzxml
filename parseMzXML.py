@@ -9,7 +9,7 @@ import base64
 import struct
 from xml.dom import minidom
 import numpy as np
-def decode_spectrum(line,precision='64'): # modified from https://code.google.com/p/massspec-toolbox/source/browse/trunk/mzxml/MzXML.py
+def decode_spectrum(line,precision='32'): # modified from https://code.google.com/p/massspec-toolbox/source/browse/trunk/mzxml/MzXML.py
         decoded = base64.decodestring(line)
         if precision == '32':
             tmp_size = len(decoded)/4
@@ -47,6 +47,7 @@ class parseMzXML():
     def __init__(self,filename):
         self.doc = minidom.parse(filename)
         self.n_scans = len(self.doc.getElementsByTagName("scan"))
+        self.default_precision = "32"
     
     def get_scan_list(self):
         # returns a NodeList that can be interated over to get individual scan instances
@@ -58,10 +59,22 @@ class parseMzXML():
         for attrib in scan.attributes.keys():
             scan_info[attrib] = scan.getAttribute(attrib)
         return scan_info
-        
-    def get_spectrum(self,scan): #get and decode spectrum
-        peaks_element = scan.getElementsByTagName('peaks') 
+
+    def get_peaks(self,scan):
+        # get meta-data
+        peaks_element = scan.getElementsByTagName('peaks')
+        attribs = {}
+        for attrib in peaks_element[0].attributes.keys():
+            attribs[attrib] = peaks_element[0].getAttribute(attrib)
+        if 'precision' not in attribs.keys():
+            print 'precision attribute missing from {} - using self.default_precision'
+            attribs["precision"] = self.default_precision
+        # get actual data
         peak_base64 = peaks_element[0].childNodes[0].nodeValue
-        mzlist,countlist = decode_spectrum(peak_base64)
+        return attribs,peak_base64
+
+    def get_spectrum(self,scan): #get and decode spectrum
+        attribs,peak_base64 = self.get_peaks(scan)
+        mzlist,countlist = decode_spectrum(peak_base64,precision=attribs["precision"])
         return mzlist,countlist
     
